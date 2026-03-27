@@ -1,0 +1,346 @@
+﻿## **1. Introduction** 
+
+ 
+
+1.1 Purpose** 
+
+This document provides a security assessment of the NAPTA data integration solution deployed within the organization's Azure environment. It evaluates the design against enterprise security standards and identifies risks and required controls. 
+
+ 
+
+1.2 Scope** 
+
+The assessment covers: 
+
+- NAPTA API integration  
+
+- Microsoft Graph integrations (SharePoint, MOM)  
+
+- Azure infrastructure (Functions, PostgreSQL, Key Vault, Networking)  
+
+- Data ingestion, processing, storage, and access  
+
+ 
+
+2. Executive Summary 
+
+ 
+
+The solution demonstrates a **strong foundational security posture**, including: 
+
+- Private network architecture  
+
+- Managed Identity–based authentication  
+
+- Centralized secrets management  
+
+- Sensitivity-based data segregation  
+
+ 
+
+However, several **critical gaps** exist in: 
+
+- Access control enforcement  
+
+- Audit logging and monitoring  
+
+- Data governance and classification  
+
+ 
+
+Failure to address these gaps may result in: 
+
+- Unauthorized access to sensitive data  
+
+- Lack of auditability and compliance exposure  
+
+- Increased risk of data leakage  
+
+ 
+
+--- 
+
+ 
+
+## **3. Solution Overview** 
+
+ 
+
+### **3.1 Architecture Summary** 
+
+The solution ingests data from multiple external sources via APIs into two distinct Azure Function Apps — an **ETL Function App** (responsible for data ingestion and processing) and a **Migration Function App** (responsible for schema and data migration operations). Processed data is stored in a **single PostgreSQL server per environment** and exposed to internal users (HR, Finance, Audit, BI) for reporting and analytics via role-scoped read access. 
+
+ 
+
+Each Function App carries its own **Managed Identity**, used specifically to access Key Vault, Azure Storage, and Microsoft Graph. Managed Identity is not a shared platform-level tier. 
+
+ 
+
+**GitHub Actions CI/CD** follows two distinct paths: 
+
+- **Infrastructure deployments** go through Azure Resource Manager (ARM/Bicep) 
+
+- **Schema and data operations** call protected Function App endpoints authenticated with Entra ID bearer tokens 
+
+ 
+
+**Observability** is provided through a stack comprising Application Insights, Log Analytics, Azure Monitor, and Action Groups, with Teams/email notifications planned for production. Any SIEM integration sits **downstream of Log Analytics / Azure Monitor**, not alongside source systems. 
+
+ 
+
+--- 
+
+ 
+
+### **3.2 Data Classification Model** 
+
+Data is categorized into: 
+
+- INTERNAL  
+
+- CONFIDENTIAL  
+
+- FINANCIAL  
+
+- AUDIT  
+
+- MIXED (multi-sensitivity tables) 
+
+ 
+
+> **Architecture Note:** Sensitivity separation is **not** achieved by running separate PostgreSQL instances per classification. A single PostgreSQL server per environment is used. Isolation is enforced at the logical layer through **tables, database views, and PostgreSQL roles**, with read access granted to HR, Finance, Audit, and BI consumers through role-scoped permissions rather than direct connections to raw backend objects. 
+
+ 
+
+--- 
+
+ 
+
+## **4. Security Assessment** 
+
+ 
+
+--- 
+
+ 
+
+### **4.1 Infrastructure Security** 
+
+ 
+
+| Control | Status | Comments | 
+
+|--------|--------|----------| 
+
+| Private Networking | Meets | VNet + Private Endpoints | 
+
+| Egress Control | Meets | NAT Gateway enforced | 
+
+| High Availability | Partial | RTO/RPO not defined | 
+
+| PostgreSQL Architecture | Meets | Single server per environment; sensitivity separation via tables, views, and roles (not separate instances) | 
+
+| Function App Separation | Meets | Two Function Apps: ETL App and Migration App, each with independent Managed Identity and scope | 
+
+ 
+
+--- 
+
+ 
+
+### **4.2 Identity & Access Management** 
+
+ 
+
+| Control | Status | Comments | 
+
+|--------|--------|----------| 
+
+| Managed Identity | Meets | Per Function App (ETL and Migration); scoped to Key Vault, Storage, and Graph access — not a shared platform tier | 
+
+| RBAC (Infrastructure) | Meets | Least privilege enforced | 
+
+| RBAC (Data Layer) | Gap | Not implemented | 
+
+ 
+
+--- 
+
+ 
+
+### **4.3 Data Security** 
+
+ 
+
+| Control | Status | Comments | 
+
+|--------|--------|----------| 
+
+| Data Segregation | Meets | Sensitivity-based | 
+
+| Encryption at Rest | Meets | Azure-managed | 
+
+| Field-Level Security | Gap | Not enforced | 
+
+| Data Masking | Gap | Not defined | 
+
+ 
+
+--- 
+
+ 
+
+### **4.4 Monitoring & Logging** 
+
+ 
+
+| Control | Status | Comments | 
+
+|--------|--------|----------| 
+
+| Audit Logging | Gap | Table exists, not populated | 
+
+| Application Insights | Meets | Telemetry collection from Function Apps | 
+
+| Log Analytics | Meets | Centralised log repository; SIEM integration should sit downstream of this layer | 
+
+| Azure Monitor + Action Groups | Partial | Configured; Teams/email notification downstream is TODO for production | 
+
+| SIEM Integration | Partial | Should be positioned downstream of Log Analytics/Azure Monitor — not alongside source systems | 
+
+| Alerting | Partial | Limited coverage; full alerting rules pending production readiness | 
+
+ 
+
+--- 
+
+ 
+
+### **4.5 DevSecOps** 
+
+ 
+
+| Control | Status | Comments | 
+
+|--------|--------|----------| 
+
+| CI/CD Security — Deploy Path | Partial | Infrastructure deployments via Azure Resource Manager (ARM/Bicep) using OIDC |
+| CI/CD Security — Schema/Data Path | Partial | Schema and data operations call protected Function App endpoints with Entra ID bearer tokens | 
+
+| Branch Protection | Gap | Not enforced | 
+
+| Code Scanning | Unknown | Not evidenced | 
+
+ 
+
+--- 
+
+ 
+
+## **5. Risk Assessment** 
+
+ 
+
+--- 
+
+ 
+
+### **5.1 High Risks** 
+
+ 
+
+| Risk | Impact | Recommendation | 
+
+|------|--------|---------------| 
+
+| No RBAC for data access | Unauthorized data exposure | Implement role-based access (HR, Finance, Audit) | 
+
+| Audit logging not active | No traceability | Enable audit logging immediately | 
+
+| No field-level controls | Data leakage risk | Implement column-level security or views | 
+
+ 
+
+--- 
+
+ 
+
+### **5.2 Medium Risks** 
+
+ 
+
+| Risk | Impact | Recommendation | 
+
+|------|--------|---------------| 
+
+| No data retention policy | Compliance risk | Define lifecycle policies | 
+
+| No data masking | Exposure in BI tools | Mask sensitive fields | 
+
+| Weak CI/CD controls | Supply chain risk | Enforce branch protection | 
+
+ 
+
+--- 
+
+ 
+
+### **5.3 Low Risks** 
+
+ 
+
+| Risk | Impact | Recommendation | 
+
+|------|--------|---------------| 
+
+| Documentation gaps | Misinterpretation | Improve architecture clarity | 
+
+ 
+
+--- 
+
+ 
+
+## **6. Recommendations** 
+
+ 
+
+### **High Priority** 
+
+- Implement RBAC for data access  
+
+- Enable audit logging  
+
+- Define PII classification  
+
+ 
+
+### **Medium Priority** 
+
+- Define retention policies  
+
+- Implement data masking  
+
+- Strengthen CI/CD controls  
+
+ 
+
+--- 
+
+ 
+
+## **7. Conclusion** 
+
+ 
+
+The solution is **well-architected from an infrastructure perspective**, but requires **enhancements in data governance and access control** before production deployment.
+
+**Architectural Clarifications (incorporated from design review):**
+
+- The data tier uses a **single PostgreSQL server per environment**; sensitivity separation is enforced through tables, views, and PostgreSQL roles — not separate database instances.
+- There are **two Function Apps**: the ETL App and the Migration App, each with its own Managed Identity scoped to Key Vault, Storage, and Graph access.
+- **GitHub Actions CI/CD** splits into two paths: ARM for infrastructure deployment and Entra-authenticated Function endpoints for schema/data operations.
+- Consumers (HR, Finance, Audit, BI) access data exclusively through the **read side**, via role-scoped database permissions — never via direct connections to raw backend objects.
+- **Observability** spans Application Insights, Log Analytics, Azure Monitor, and Action Groups; Teams/email alerting is planned for production. Any SIEM solution should integrate downstream of Log Analytics/Azure Monitor. 
+
+---
